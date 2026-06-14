@@ -76,7 +76,7 @@ fun TotalStationScreen(
             }
 
             // لوحة التحكم في النصف السفلي
-            Surface(elevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+            Surface(shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier
                         .padding(16.dp)

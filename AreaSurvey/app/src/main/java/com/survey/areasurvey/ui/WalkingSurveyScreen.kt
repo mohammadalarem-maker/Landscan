@@ -219,7 +219,7 @@ fun WalkingControls(
     onAddPoint: () -> Unit,
     onSave: () -> Unit
 ) {
-    Surface(elevation = 8.dp) {
+    Surface(shadowElevation = 8.dp) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
