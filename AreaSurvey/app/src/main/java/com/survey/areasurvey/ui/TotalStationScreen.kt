@@ -1,6 +1,8 @@
 package com.survey.areasurvey.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -8,12 +10,27 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.survey.areasurvey.sensors.CompassManager
 import com.survey.areasurvey.viewmodel.SurveyViewModel
 import org.osmdroid.util.GeoPoint
+import kotlinx.coroutines.delay
+
+/**
+ * دالة لتنظيف وتحويل الأرقام العربية والفاصلة إلى صيغة عشرية إنجليزية قياسية
+ */
+fun String.normalizeAndroidNumbers(): String {
+    val arabicDigits = charArrayOf('٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩')
+    val englishDigits = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+    var result = this
+    for (i in 0..9) {
+        result = result.replace(arabicDigits[i], englishDigits[i])
+    }
+    return result.replace(',', '.').trim()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,17 +47,29 @@ fun TotalStationScreen(
     var useManualAzimuth by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
 
-    // قراءة البوصلة المستمرة
+    // تقييد تدفق البوصلة (Throttle) ليعمل كل 250 ملي ثانية لمنع تعليق الكيبورد والواجهة
     LaunchedEffect(Unit) {
+        var lastUpdateTime = 0L
         compassManager.getAzimuthFlow().collect { azimuth ->
-            viewModel.updateCurrentAzimuth(azimuth)
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastUpdateTime > 250) { 
+                viewModel.updateCurrentAzimuth(azimuth)
+                lastUpdateTime = currentTime
+            }
         }
     }
+
+    // تجهيز المدخلات النظيفة للتحقق البرمجي
+    val cleanDistance = distanceInput.normalizeAndroidNumbers()
+    val cleanManualAzimuth = manualAzimuthInput.normalizeAndroidNumbers()
+    
+    val isDistanceValid = cleanDistance.toDoubleOrNull() != null
+    val isAzimuthValid = !useManualAzimuth || cleanManualAzimuth.toDoubleOrNull() != null
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Total Station") },
+                title = { Text("Total Station", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
@@ -65,6 +94,7 @@ fun TotalStationScreen(
             // الخريطة في النصف العلوي
             Box(modifier = Modifier.weight(1f)) {
                 SurveyMap(state = state)
+                
                 AreaInfoCard(
                     area = state.areaSquareMeters,
                     perimeter = state.perimeterMeters,
@@ -73,6 +103,24 @@ fun TotalStationScreen(
                         .align(Alignment.TopCenter)
                         .padding(8.dp)
                 )
+
+                // زر تحكم عائم جانبي للتركيز
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            // للاستخدام المستقبلي في توجيه الخريطة
+                        },
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Icon(Icons.Default.MyLocation, contentDescription = "تركيز")
+                    }
+                }
             }
 
             // لوحة التحكم في النصف السفلي
@@ -82,7 +130,7 @@ fun TotalStationScreen(
                         .padding(16.dp)
                         .fillMaxWidth()
                 ) {
-                    // نقطة الوقوف
+                    // كرت نقطة الوقوف
                     StationCard(
                         stationPoint = state.stationPoint,
                         onSetStation = { viewModel.setStationPoint() }
@@ -90,7 +138,7 @@ fun TotalStationScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // قراءة الزاوية الحالية
+                    // عرض الزاوية الحالية
                     AzimuthDisplay(
                         azimuth = state.currentAzimuth,
                         useManual = useManualAzimuth,
@@ -99,7 +147,7 @@ fun TotalStationScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // إدخال المسافة والزاوية اليدوية
+                    // حقول الإدخال
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -133,10 +181,10 @@ fun TotalStationScreen(
                     ) {
                         Button(
                             onClick = {
-                                val dist = distanceInput.toDoubleOrNull()
+                                val dist = cleanDistance.toDoubleOrNull()
                                 if (dist != null && state.stationPoint != null) {
                                     if (useManualAzimuth) {
-                                        val az = manualAzimuthInput.toDoubleOrNull()
+                                        val az = cleanManualAzimuth.toDoubleOrNull()
                                         if (az != null) {
                                             viewModel.addTotalStationPointManual(dist, az)
                                             distanceInput = ""
@@ -148,7 +196,7 @@ fun TotalStationScreen(
                                     }
                                 }
                             },
-                            enabled = state.stationPoint != null && distanceInput.toDoubleOrNull() != null,
+                            enabled = state.stationPoint != null && isDistanceValid && isAzimuthValid,
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Default.AddLocation, contentDescription = null)
@@ -198,7 +246,7 @@ fun StationCard(
             Column {
                 Text("نقطة الوقوف (Station)", style = MaterialTheme.typography.labelMedium)
                 Text(
-                    text = stationPoint?.let { "%.6f, %.6f".format(it.latitude, it.longitude) }
+                    text = stationPoint?.let { "%.6f, %.6f".format(java.util.Locale.US, it.latitude, it.longitude) }
                         ?: "غير محددة",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
@@ -227,7 +275,7 @@ fun AzimuthDisplay(
         Column {
             Text("الزاوية الحالية (Azimuth)", style = MaterialTheme.typography.labelMedium)
             Text(
-                text = "%.1f°  %s".format(azimuth, directionLabel(azimuth)),
+                text = "%.1f°  %s".format(java.util.Locale.US, azimuth, directionLabel(azimuth)),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
